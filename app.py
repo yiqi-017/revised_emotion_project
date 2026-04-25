@@ -67,15 +67,20 @@ def predict_emotion(model, classes, device, face_bgr):
 def main():
     model, classes, device = load_model()
     detector = build_face_detector()
-    speech_engine = SpeechEngine(cooldown=8)
+    speech_engine = SpeechEngine(cooldown=15, global_cooldown=8)
     smoother = PredictionSmoother(window_size=5)
     stable_trigger = StableEmotionTrigger(stable_count=3)
+    last_debug_state = None
 
     cap = cv2.VideoCapture(CAMERA_ID)
     if not cap.isOpened():
         raise RuntimeError("Cannot open webcam. Check camera permissions or CAMERA_ID.")
 
     print("Press 'q' to quit.")
+    print(
+        f"Speech rule: conf>={CONF_THRESHOLD}, stable_count>=3, "
+        "then try to speak."
+    )
 
     while True:
         ret, frame = cap.read()
@@ -116,11 +121,25 @@ def main():
                     2,
                 )
 
-                if conf >= CONF_THRESHOLD and is_stable and smooth_emotion != "neutral":
+                debug_state = (emotion, smooth_emotion, round(conf, 2), is_stable)
+                if debug_state != last_debug_state:
+                    print(
+                        "Detect:",
+                        f"raw={emotion}",
+                        f"stable={smooth_emotion}",
+                        f"conf={conf:.2f}",
+                        f"is_stable={is_stable}",
+                    )
+                    last_debug_state = debug_state
+
+                if conf >= CONF_THRESHOLD and is_stable:
                     speech_engine.speak_emotion(smooth_emotion)
         else:
             smoother.clear()
             stable_trigger.clear()
+            if last_debug_state is not None:
+                print("Detect: no face")
+                last_debug_state = None
             cv2.putText(
                 frame,
                 "No face detected",
